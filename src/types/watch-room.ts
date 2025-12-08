@@ -77,6 +77,7 @@ export interface ServerToClientEvents {
   'voice:offer': (data: { userId: string; offer: RTCSessionDescriptionInit }) => void;
   'voice:answer': (data: { userId: string; answer: RTCSessionDescriptionInit }) => void;
   'voice:ice': (data: { userId: string; candidate: RTCIceCandidateInit }) => void;
+  'voice:audio-chunk': (data: { userId: string; audioData: number[]; sampleRate?: number }) => void;
   'state:cleared': () => void;
   'error': (message: string) => void;
 }
@@ -114,6 +115,7 @@ export interface ClientToServerEvents {
   'voice:offer': (data: { targetUserId: string; offer: RTCSessionDescriptionInit }) => void;
   'voice:answer': (data: { targetUserId: string; answer: RTCSessionDescriptionInit }) => void;
   'voice:ice': (data: { targetUserId: string; candidate: RTCIceCandidateInit }) => void;
+  'voice:audio-chunk': (data: { roomId: string; audioData: number[]; sampleRate?: number }) => void;
 
   'state:clear': (callback?: (response: { success: boolean; error?: string }) => void) => void;
 

@@ -2,8 +2,9 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { MessageCircle, X, Send, Smile, Minimize2, Maximize2, Info, Users, LogOut, XCircle } from 'lucide-react';
+import { MessageCircle, X, Send, Smile, Minimize2, Maximize2, Info, Users, LogOut, XCircle, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
 import { useWatchRoomContextSafe } from '@/components/WatchRoomProvider';
+import { useVoiceChat } from '@/hooks/useVoiceChat';
 
 const EMOJI_LIST = ['😀', '😂', '😍', '🥰', '😎', '🤔', '👍', '👏', '🎉', '❤️', '🔥', '⭐'];
 
@@ -20,6 +21,18 @@ export default function ChatFloatingWindow() {
   const isOpenRef = useRef(isOpen);
   const isMinimizedRef = useRef(isMinimized);
   const currentRoomIdRef = useRef<string | null>(null);
+
+  // 语音聊天状态
+  const [isMicEnabled, setIsMicEnabled] = useState(false);
+  const [isSpeakerEnabled, setIsSpeakerEnabled] = useState(true);
+
+  // 使用语音聊天hook
+  const voiceChat = useVoiceChat({
+    socket: watchRoom?.socket || null,
+    roomId: watchRoom?.currentRoom?.id || null,
+    isMicEnabled,
+    isSpeakerEnabled,
+  });
 
   // 当房间变化时重置状态
   useEffect(() => {
@@ -333,29 +346,87 @@ export default function ChatFloatingWindow() {
       {/* 聊天窗口 */}
       <div className="fixed bottom-20 right-4 z-[700] flex w-80 flex-col rounded-2xl bg-gray-800 shadow-2xl md:bottom-4 md:w-96">
       {/* 头部 */}
-      <div className="flex items-center justify-between rounded-t-2xl bg-green-500 px-4 py-3">
-        <div className="flex items-center gap-2">
-          <MessageCircle className="h-5 w-5 text-white" />
-          <div>
-            <h3 className="text-sm font-bold text-white">聊天室</h3>
-            <p className="text-xs text-white/80">{members.length} 人在线</p>
+      <div className="rounded-t-2xl bg-green-500">
+        {/* 第一行: 标题和窗口控制 */}
+        <div className="flex items-center justify-between px-4 py-3">
+          <div className="flex items-center gap-2">
+            <MessageCircle className="h-5 w-5 text-white" />
+            <div>
+              <h3 className="text-sm font-bold text-white">聊天室</h3>
+              <p className="text-xs text-white/80">{members.length} 人在线</p>
+            </div>
+          </div>
+          <div className="flex gap-1">
+            <button
+              onClick={() => setIsMinimized(true)}
+              className="rounded p-1 text-white/80 transition-colors hover:bg-white/20 hover:text-white"
+              aria-label="最小化"
+            >
+              <Minimize2 className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setIsOpen(false)}
+              className="rounded p-1 text-white/80 transition-colors hover:bg-white/20 hover:text-white"
+              aria-label="关闭"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
         </div>
-        <div className="flex gap-1">
-          <button
-            onClick={() => setIsMinimized(true)}
-            className="rounded p-1 text-white/80 transition-colors hover:bg-white/20 hover:text-white"
-            aria-label="最小化"
-          >
-            <Minimize2 className="h-4 w-4" />
-          </button>
-          <button
-            onClick={() => setIsOpen(false)}
-            className="rounded p-1 text-white/80 transition-colors hover:bg-white/20 hover:text-white"
-            aria-label="关闭"
-          >
-            <X className="h-4 w-4" />
-          </button>
+
+        {/* 第二行: 语音控制按钮 */}
+        <div className="border-t border-white/10 px-4 py-2">
+          <div className="flex items-center justify-center gap-3 mb-1">
+            {/* 麦克风按钮 */}
+            <button
+              onClick={() => setIsMicEnabled(!isMicEnabled)}
+              disabled={voiceChat.isConnecting}
+              className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
+                isMicEnabled
+                  ? 'bg-white text-green-600 hover:bg-white/90'
+                  : 'bg-white/10 text-white/80 hover:bg-white/20'
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+              aria-label={isMicEnabled ? '关闭麦克风' : '开启麦克风'}
+            >
+              {isMicEnabled ? (
+                <Mic className="h-4 w-4" />
+              ) : (
+                <MicOff className="h-4 w-4" />
+              )}
+              <span>{isMicEnabled ? '麦克风开' : '麦克风关'}</span>
+            </button>
+
+            {/* 喇叭按钮 */}
+            <button
+              onClick={() => setIsSpeakerEnabled(!isSpeakerEnabled)}
+              className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
+                isSpeakerEnabled
+                  ? 'bg-white text-green-600 hover:bg-white/90'
+                  : 'bg-white/10 text-white/80 hover:bg-white/20'
+              }`}
+              aria-label={isSpeakerEnabled ? '关闭喇叭' : '开启喇叭'}
+            >
+              {isSpeakerEnabled ? (
+                <Volume2 className="h-4 w-4" />
+              ) : (
+                <VolumeX className="h-4 w-4" />
+              )}
+              <span>{isSpeakerEnabled ? '喇叭开' : '喇叭关'}</span>
+            </button>
+          </div>
+
+          {/* 状态指示 */}
+          <div className="text-center text-xs text-white/60">
+            {voiceChat.isConnecting && '正在连接...'}
+            {voiceChat.error && (
+              <span className="text-red-300">{voiceChat.error}</span>
+            )}
+            {!voiceChat.isConnecting && !voiceChat.error && isMicEnabled && (
+              <span>
+                {voiceChat.strategy === 'webrtc-fallback' ? 'WebRTC模式' : '服务器中转模式'}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 

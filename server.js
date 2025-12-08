@@ -305,6 +305,19 @@ class WatchRoomServer {
         });
       });
 
+      // 语音聊天 - 服务器中转音频数据
+      socket.on('voice:audio-chunk', (data) => {
+        const roomInfo = this.socketToRoom.get(socket.id);
+        if (!roomInfo) return;
+
+        // 将音频数据转发给房间内的其他成员
+        socket.to(roomInfo.roomId).emit('voice:audio-chunk', {
+          userId: socket.id,
+          audioData: data.audioData,
+          sampleRate: data.sampleRate || 16000,
+        });
+      });
+
       // 心跳
       socket.on('heartbeat', () => {
         const roomInfo = this.socketToRoom.get(socket.id);
