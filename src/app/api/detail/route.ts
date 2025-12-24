@@ -26,8 +26,14 @@ export async function GET(request: NextRequest) {
       const config = await getConfig();
       const openListConfig = config.OpenListConfig;
 
-      if (!openListConfig || !openListConfig.URL || !openListConfig.Username || !openListConfig.Password) {
-        throw new Error('OpenList 未配置');
+      if (
+        !openListConfig ||
+        !openListConfig.Enabled ||
+        !openListConfig.URL ||
+        !openListConfig.Username ||
+        !openListConfig.Password
+      ) {
+        throw new Error('OpenList 未配置或未启用');
       }
 
       const rootPath = openListConfig.RootPath || '/';

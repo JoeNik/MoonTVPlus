@@ -37,7 +37,12 @@ export async function GET(request: NextRequest) {
   const apiSites = await getAvailableApiSites(authInfo.username);
 
   // 检查是否配置了 OpenList
-  const hasOpenList = !!(config.OpenListConfig?.URL && config.OpenListConfig?.Username && config.OpenListConfig?.Password);
+  const hasOpenList = !!(
+    config.OpenListConfig?.Enabled &&
+    config.OpenListConfig?.URL &&
+    config.OpenListConfig?.Username &&
+    config.OpenListConfig?.Password
+  );
 
   // 搜索 OpenList（如果配置了）
   let openlistResults: any[] = [];

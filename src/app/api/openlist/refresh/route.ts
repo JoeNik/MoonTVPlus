@@ -43,9 +43,15 @@ export async function POST(request: NextRequest) {
     const config = await getConfig();
     const openListConfig = config.OpenListConfig;
 
-    if (!openListConfig || !openListConfig.URL || !openListConfig.Username || !openListConfig.Password) {
+    if (
+      !openListConfig ||
+      !openListConfig.Enabled ||
+      !openListConfig.URL ||
+      !openListConfig.Username ||
+      !openListConfig.Password
+    ) {
       return NextResponse.json(
-        { error: 'OpenList 未配置' },
+        { error: 'OpenList 未配置或未启用' },
         { status: 400 }
       );
     }
