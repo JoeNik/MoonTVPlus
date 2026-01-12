@@ -36,6 +36,10 @@ function SearchPageClient() {
   const [triggerAcgSearch, setTriggerAcgSearch] = useState(false);
   // 用户权限
   const [userRole, setUserRole] = useState<'owner' | 'admin' | 'user' | null>(null);
+  // 繁体转简体转换器
+  const converterRef = useRef<((text: string) => string) | null>(null);
+  // 转换器是否已初始化
+  const [converterReady, setConverterReady] = useState(false);
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -538,6 +542,26 @@ function SearchPageClient() {
     const authInfo = getAuthInfoFromBrowserCookie();
     setUserRole(authInfo?.role || null);
 
+    // 初始化繁体转简体转换器
+    if (typeof window !== 'undefined') {
+      import('opencc-js').then((module) => {
+        try {
+          const OpenCC = module.default || module;
+          const converter = OpenCC.Converter({ from: 'hk', to: 'cn' });
+          converterRef.current = converter;
+          setConverterReady(true);
+        } catch (error) {
+          console.error('初始化繁体转简体转换器失败:', error);
+          setConverterReady(true); // 即使失败也设置为 true，避免阻塞
+        }
+      }).catch((error) => {
+        console.error('加载 opencc-js 失败:', error);
+        setConverterReady(true); // 即使失败也设置为 true，避免阻塞
+      });
+    } else {
+      setConverterReady(true);
+    }
+
     // 初始加载搜索历史
     getSearchHistory().then(setSearchHistory);
 
@@ -600,13 +624,41 @@ function SearchPageClient() {
   }, []);
 
   useEffect(() => {
+    // 等待转换器初始化完成
+    if (!converterReady) {
+      return;
+    }
+
     // 当搜索参数变化时更新搜索状态
-    const query = searchParams.get('q') || '';
+    let query = searchParams.get('q') || '';
+
+    // 如果开启了繁体转简体，进行转换
+    if (query && typeof window !== 'undefined') {
+      const searchTraditionalToSimplified = localStorage.getItem('searchTraditionalToSimplified');
+
+      if (searchTraditionalToSimplified === 'true' && converterRef.current) {
+        try {
+          const originalQuery = query;
+          query = converterRef.current(query);
+
+          // 如果转换后的文本与原文本不同，更新 URL
+          if (originalQuery !== query) {
+            const trimmedConverted = query.trim();
+            // 使用 replace 而不是 push，避免在历史记录中留下繁体版本
+            router.replace(`/search?q=${encodeURIComponent(trimmedConverted)}${searchParams.get('type') ? `&type=${searchParams.get('type')}` : ''}`);
+            return; // 等待 URL 更新后重新触发此 effect
+          }
+        } catch (error) {
+          console.error('[URL参数监听] 繁体转简体转换失败:', error);
+        }
+      }
+    }
+
     currentQueryRef.current = query.trim();
 
     if (query) {
       setSearchQuery(query);
-      
+
       const trimmed = query.trim();
       
       // 检查是否有缓存且不是强制刷新
@@ -799,7 +851,7 @@ function SearchPageClient() {
       setShowResults(false);
       setShowSuggestions(false);
     }
-  }, [searchParams, forceRefresh]);
+  }, [searchParams, forceRefresh, converterReady]);
 
   // 组件卸载时，关闭可能存在的连接
   useEffect(() => {
@@ -838,8 +890,20 @@ function SearchPageClient() {
   // 搜索表单提交时触发，处理搜索逻辑
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmed = searchQuery.trim().replace(/\s+/g, ' ');
+    let trimmed = searchQuery.trim().replace(/\s+/g, ' ');
     if (!trimmed) return;
+
+    // 如果开启了繁体转简体，进行转换
+    if (typeof window !== 'undefined') {
+      const searchTraditionalToSimplified = localStorage.getItem('searchTraditionalToSimplified');
+      if (searchTraditionalToSimplified === 'true' && converterRef.current) {
+        try {
+          trimmed = converterRef.current(trimmed);
+        } catch (error) {
+          console.error('繁体转简体转换失败:', error);
+        }
+      }
+    }
 
     // 回显搜索框
     setSearchQuery(trimmed);
@@ -863,7 +927,21 @@ function SearchPageClient() {
   };
 
   const handleSuggestionSelect = (suggestion: string) => {
-    setSearchQuery(suggestion);
+    let processedSuggestion = suggestion;
+
+    // 如果开启了繁体转简体，进行转换
+    if (typeof window !== 'undefined') {
+      const searchTraditionalToSimplified = localStorage.getItem('searchTraditionalToSimplified');
+      if (searchTraditionalToSimplified === 'true' && converterRef.current) {
+        try {
+          processedSuggestion = converterRef.current(suggestion);
+        } catch (error) {
+          console.error('繁体转简体转换失败:', error);
+        }
+      }
+    }
+
+    setSearchQuery(processedSuggestion);
     setShowSuggestions(false);
 
     // 自动执行搜索
@@ -872,15 +950,15 @@ function SearchPageClient() {
     // 根据当前选项卡执行不同的搜索
     if (activeTab === 'video') {
       // 影视搜索
-      router.push(`/search?q=${encodeURIComponent(suggestion)}&type=video`);
+      router.push(`/search?q=${encodeURIComponent(processedSuggestion)}&type=video`);
       // 其余由 searchParams 变化的 effect 处理
     } else if (activeTab === 'pansou') {
       // 网盘搜索 - 触发搜索
-      router.push(`/search?q=${encodeURIComponent(suggestion)}&type=pansou`);
+      router.push(`/search?q=${encodeURIComponent(processedSuggestion)}&type=pansou`);
       setTriggerPansouSearch(prev => !prev);
     } else if (activeTab === 'acg') {
       // ACG 磁力搜索 - 触发搜索
-      router.push(`/search?q=${encodeURIComponent(suggestion)}&type=acg`);
+      router.push(`/search?q=${encodeURIComponent(processedSuggestion)}&type=acg`);
       setTriggerAcgSearch(prev => !prev);
     }
   };
