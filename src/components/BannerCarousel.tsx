@@ -1,11 +1,12 @@
 'use client';
 
-import { ChevronLeft, ChevronRight, Play } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Play, Volume2, VolumeX } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef,useState } from 'react';
 
 import { type TMDBItem,getGenreNames, getTMDBImageUrl } from '@/lib/tmdb.client';
+import { getDoubanDetail } from '@/lib/douban.client';
 import { processImageUrl } from '@/lib/utils';
 
 interface BannerCarouselProps {
@@ -32,6 +33,10 @@ export default function BannerCarousel({ autoPlayInterval = 5000, delayLoad = fa
   const [isYouTubeAccessible, setIsYouTubeAccessible] = useState(false); // YouTube连通性（默认false，检查后再决定）
   const [enableTrailers, setEnableTrailers] = useState(false); // 是否启用预告片（默认关闭）
   const [dataSource, setDataSource] = useState<string>(''); // 当前数据源
+  const [trailersLoaded, setTrailersLoaded] = useState(false); // 预告片是否已加载
+  const [isMuted, setIsMuted] = useState(true); // 视频是否静音（默认静音）
+  const videoRef = useRef<HTMLVideoElement>(null); // 视频元素引用
+  const videoRefs = useRef<Map<number, HTMLVideoElement>>(new Map()); // 所有视频元素的引用
   const touchStartX = useRef(0);
   const touchEndX = useRef(0);
   const isManualChange = useRef(false); // 标记是否为手动切换
@@ -47,6 +52,19 @@ export default function BannerCarousel({ autoPlayInterval = 5000, delayLoad = fa
   // 跳转到播放页面
   const handlePlay = (title: string) => {
     router.push(`/play?title=${encodeURIComponent(title)}`);
+  };
+
+  // 切换音量
+  const toggleMute = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newMutedState = !isMuted;
+    setIsMuted(newMutedState);
+
+    // 直接更新当前视频元素的静音状态
+    const currentVideo = videoRefs.current.get(currentIndex);
+    if (currentVideo) {
+      currentVideo.muted = newMutedState;
+    }
   };
 
   // 获取图片URL（处理TX完整URL和TMDB路径）
@@ -167,6 +185,7 @@ export default function BannerCarousel({ autoPlayInterval = 5000, delayLoad = fa
           setItems(cachedData);
           setDataSource(validSource || ''); // 设置数据源
           setIsLoading(false);
+          setTrailersLoaded(false); // 重置预告片加载状态
         }
 
         // 如果缓存过期或没有缓存，后台更新数据
@@ -180,6 +199,7 @@ export default function BannerCarousel({ autoPlayInterval = 5000, delayLoad = fa
 
             setItems(result.list);
             setDataSource(newDataSource); // 设置数据源
+            setTrailersLoaded(false); // 重置预告片加载状态
 
             // 保存到 localStorage（使用数据源特定的key）
             try {
@@ -202,6 +222,70 @@ export default function BannerCarousel({ autoPlayInterval = 5000, delayLoad = fa
 
     fetchTrending();
   }, [shouldLoad]);
+
+  // 前端获取豆瓣预告片
+  useEffect(() => {
+    // 只有在启用预告片、数据源是豆瓣、有数据且未加载预告片时才执行
+    if (!enableTrailers || dataSource !== 'Douban' || items.length === 0 || trailersLoaded) {
+      return;
+    }
+
+    const fetchDoubanTrailers = async () => {
+      try {
+        // 为每个项目获取预告片
+        const itemsWithTrailers = await Promise.all(
+          items.map(async (item) => {
+            try {
+              // 使用统一的豆瓣详情获取函数（会根据用户配置的代理设置自动选择请求方式）
+              const detail = await getDoubanDetail(item.id.toString());
+
+              // 获取预告片链接（取第一个）
+              const trailerUrl = detail.trailers && detail.trailers.length > 0
+                ? detail.trailers[0].video_url
+                : null;
+
+              return {
+                ...item,
+                trailer_url: trailerUrl,
+              };
+            } catch (error) {
+              console.error(`获取豆瓣电影 ${item.id} 预告片失败:`, error);
+              return item;
+            }
+          })
+        );
+
+        setItems(itemsWithTrailers);
+        setTrailersLoaded(true);
+      } catch (error) {
+        console.error('获取豆瓣预告片失败:', error);
+      }
+    };
+
+    fetchDoubanTrailers();
+  }, [enableTrailers, dataSource, items.length, trailersLoaded]);
+
+  // 切换轮播图时重置静音状态
+  useEffect(() => {
+    setIsMuted(true);
+  }, [currentIndex]);
+
+  // 控制视频播放/暂停和静音状态
+  useEffect(() => {
+    // 遍历所有视频元素
+    videoRefs.current.forEach((video, index) => {
+      if (index === currentIndex) {
+        // 当前显示的视频：播放并设置静音状态
+        video.muted = isMuted;
+        video.play().catch(() => {
+          // 忽略自动播放失败的错误
+        });
+      } else {
+        // 非当前显示的视频：暂停
+        video.pause();
+      }
+    });
+  }, [currentIndex, isMuted]);
 
   // 自动播放
   useEffect(() => {
@@ -336,10 +420,16 @@ export default function BannerCarousel({ autoPlayInterval = 5000, delayLoad = fa
               /* 显示豆瓣直链视频 */
               <div className="absolute inset-0 overflow-hidden">
                 <video
+                  ref={(el) => {
+                    if (el) {
+                      videoRefs.current.set(index, el);
+                    } else {
+                      videoRefs.current.delete(index);
+                    }
+                  }}
                   src={getVideoUrl(item.trailer_url) || undefined}
                   className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 min-w-full min-h-full w-auto h-auto object-cover"
-                  autoPlay
-                  muted
+                  muted={isMuted}
                   loop
                   playsInline
                   preload="metadata"
@@ -455,6 +545,21 @@ export default function BannerCarousel({ autoPlayInterval = 5000, delayLoad = fa
       >
         <ChevronRight className="w-8 h-8" />
       </button>
+
+      {/* 音量控制按钮 - 只在有豆瓣预告片时显示 */}
+      {currentItem.trailer_url && enableTrailers && (
+        <button
+          onClick={toggleMute}
+          className="absolute top-2 right-2 md:top-4 md:right-4 w-8 h-8 md:w-10 md:h-10 bg-black/30 hover:bg-black/60 text-white rounded-full flex items-center justify-center transition-all duration-300 z-10"
+          aria-label={isMuted ? "开启声音" : "关闭声音"}
+        >
+          {isMuted ? (
+            <VolumeX className="w-4 h-4 md:w-5 md:h-5" />
+          ) : (
+            <Volume2 className="w-4 h-4 md:w-5 md:h-5" />
+          )}
+        </button>
+      )}
 
       {/* 指示器 */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
